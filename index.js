@@ -184,6 +184,25 @@ app.get('/session', (req, res) => {
   res.json({ ok: true, sessionData: exportSession() });
 });
 
+app.get('/channel-id', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) {
+    return res.status(403).json({ ok: false, error: 'Invalid admin key' });
+  }
+  if (!isConnected) {
+    return res.status(400).json({ ok: false, error: 'Not connected yet - scan the QR at /qr first' });
+  }
+  const invite = req.query.invite;
+  if (!invite) {
+    return res.status(400).json({ ok: false, error: 'Add ?invite=YOUR_INVITE_CODE (the part after whatsapp.com/channel/)' });
+  }
+  try {
+    const metadata = await sock.newsletterMetadata('invite', invite);
+    res.json({ ok: true, channelId: metadata.id, name: metadata.name });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.post('/send-quiz', async (req, res) => {
   if (req.headers['x-api-key'] !== API_KEY) {
     return res.status(403).json({ ok: false, error: 'Invalid API key' });
