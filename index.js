@@ -5,7 +5,7 @@
  * with the real red-X/green-check/confetti UI) using the Baileys library.
  *
  * Session persistence:
- * Instead of relying on local disk (which Render's free tier wipes on every
+ * Instead of relying on local disk (which some free hosts wipe on every
  * restart/spin-down), this service can export its login session as a base64
  * string that you save as an environment variable. On startup it reloads
  * from that variable, so you do NOT need to re-scan the QR code every day.
@@ -157,21 +157,51 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/qr', async (req, res) => {
-  if (isConnected) {
-    return res.send('<h2>✅ Already connected. No QR needed.</h2>');
-  }
-  if (!latestQR) {
-    return res.send('<h2>⏳ Waiting for QR code... refresh in a few seconds.</h2><script>setTimeout(()=>location.reload(),3000)</script>');
-  }
-  const dataUrl = await QRCode.toDataURL(latestQR);
   res.send(`
     <html><body style="text-align:center;font-family:sans-serif;padding-top:40px;">
-      <h2>Scan with WhatsApp → Linked Devices</h2>
-      <img src="${dataUrl}" style="width:300px;height:300px;" />
-      <p>This page refreshes every 5 seconds until connected.</p>
-      <script>setTimeout(()=>location.reload(),5000)</script>
+      <h2 id="statusHeading">Scan with WhatsApp → Linked Devices</h2>
+      <div id="qrBox"><p>⏳ Loading QR code...</p></div>
+      <p style="color:#666;font-size:13px;">This page updates automatically - keep it open while scanning.</p>
+      <script>
+        let lastQR = null;
+        async function poll() {
+          try {
+            const res = await fetch('/qr-data');
+            const data = await res.json();
+
+            if (data.connected) {
+              document.getElementById('statusHeading').textContent = '✅ Connected!';
+              document.getElementById('qrBox').innerHTML = '<p>Your WhatsApp is linked. You can close this page.</p>';
+              return; // stop polling once connected
+            }
+
+            if (data.qr && data.qr !== lastQR) {
+              lastQR = data.qr;
+              document.getElementById('qrBox').innerHTML =
+                '<img src="' + data.qr + '" style="width:300px;height:300px;" />';
+            } else if (!data.qr) {
+              document.getElementById('qrBox').innerHTML = '<p>⏳ Waiting for QR code...</p>';
+            }
+          } catch (e) {
+            // network hiccup, just try again next tick
+          }
+          setTimeout(poll, 3000);
+        }
+        poll();
+      </script>
     </body></html>
   `);
+});
+
+app.get('/qr-data', async (req, res) => {
+  if (isConnected) {
+    return res.json({ connected: true });
+  }
+  if (!latestQR) {
+    return res.json({ connected: false, qr: null });
+  }
+  const dataUrl = await QRCode.toDataURL(latestQR);
+  res.json({ connected: false, qr: dataUrl });
 });
 
 app.get('/session', (req, res) => {
